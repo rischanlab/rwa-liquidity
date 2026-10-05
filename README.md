@@ -10,6 +10,99 @@ It accompanies a working paper in preparation. Definitions and classification
 rules are in [`docs/methodology.md`](docs/methodology.md); source-specific
 details are in [`docs/data-sources.md`](docs/data-sources.md).
 
+> **This is the `research` branch of a fork** of
+> [Atytmr07/rwa-liquidity](https://github.com/Atytmr07/rwa-liquidity) by
+> Emre Atay Tümer (MIT licence). It adds a second asset list, the
+> *Beyond TVL* risk measures, and the data used in a separate study by
+> Rischan Mafrur. The original package and its 16-asset registry are
+> unchanged; everything below the "Research extension" section is the
+> upstream README.
+
+## Research extension (this branch)
+
+### What it adds
+
+| Addition | Where |
+|---|---|
+| A seven-asset research registry: BUIDL, BENJI, OUSG, USTB, USDY, HLSCOPE, STAC (the sample of Mafrur, 2026, without PAXG and XAUT) | `src/rwa_liquidity/sources/data/research.toml` |
+| `--registry` option on the `paper` command, to measure any asset list | `src/rwa_liquidity/cli.py`, `sources/registry.py` |
+| Issuer and pooling addresses for USDY, BENJI and STAC, from issuer documentation | `sources/data/known_addresses.toml` |
+| `active_addresses` per asset-month (distinct senders and recipients) | `src/rwa_liquidity/paper.py` |
+| `risk` command: the variables and L/C scores of *Beyond TVL* (Mafrur & Khadijah, arXiv:2605.29689), Ethereum only | `src/rwa_liquidity/risk.py` |
+| `EVM_RPC_MAX_LOGS` / `EVM_RPC_MAX_LOG_REQUESTS` settings to raise the scan ceilings | `sources/evm_rpc.py` |
+| A completeness checker for a panel | `check_panel.py` |
+| The resulting data: 7 assets × 9 calendar months (Dec 2025–Aug 2026), read at block 26,086,416 | `paper_research/` |
+
+### Data source
+
+All on-chain variables are computed directly from Ethereum mainnet through
+public JSON-RPC (default endpoint `rpc.mevblocker.io`), not from a data
+aggregator. Every `Transfer` event since each contract's deployment is
+replayed to rebuild address balances at each month end, and the result is
+checked against the contract's own `totalSupply()`. All seven assets pass.
+Only token prices (NAV per share), needed for the dollar variables, come from
+outside the chain, via `prices_template.csv`.
+
+Figures cover the **Ethereum deployment only**. Tokens also issued on other
+networks (notably BENJI, USDY, HLSCOPE) therefore show fewer holders than
+multi-chain aggregates such as RWA.xyz.
+
+### Reproduce
+
+```bash
+uv sync
+
+# 1. Asset-month panel for the seven research assets (re-run until complete)
+EVM_RPC_BLOCK_STEP=10000 EVM_RPC_MAX_LOGS=2000000 \
+uv run rwa-liquidity paper --registry research.toml --out paper_research \
+  --first-month 2025-12 --last-month 2026-08 --head 26086416
+
+# 2. Check that every asset and month was measured
+python3 check_panel.py paper_research/panel.csv
+
+# 3. Beyond TVL variables and risk scores (fill in prices_template.csv first)
+uv run rwa-liquidity risk --panel paper_research/panel.csv \
+  --prices prices_template.csv --out paper_research/risk.csv
+```
+
+The first run replays full transfer histories against a free, rate-limited
+node and may need several attempts; each run resumes from the local cache.
+Run all commands from the repository root.
+
+### Outputs in `paper_research/`
+
+| File | Contents |
+|---|---|
+| `panel.csv` | One row per asset and month: supply, holders, active addresses, transfer counts and volumes by event category, turnover, concentration, block numbers |
+| `risk.csv` | *Beyond TVL* raw and derived variables (turnover, active ratio, transfer intensity, ATS, AVH, holder HHI), their 0–100 risk scores, L, C and composites |
+| `table_turnover.tex`, `table_months.tex`, `numbers.tex` | LaTeX fragments for `\input` |
+
+### Differences from *Beyond TVL*
+
+- Ethereum only, so the cross-chain measures NHHI and market-quality risk M
+  are not computed; C uses the Ethereum holder HHI in place of NHHI
+  (`C_two` omits it). Composite weights keep the paper's proportions with M
+  removed.
+- Calendar months instead of a rolling 30 days.
+- Holders and activity are reconstructed from the chain, not read from
+  RWA.xyz.
+
+### Citation
+
+Please cite the original package:
+
+```bibtex
+@software{tumer2026rwaliquidity,
+  author  = {T{\"u}mer, Emre Atay},
+  title   = {rwa-liquidity: Measuring liquidity in tokenized real-world asset markets},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/atytmr07/rwa-liquidity}
+}
+```
+
+---
+
 ## Replication
 
 All figures in the paper come from one run, read at Ethereum block 26,086,416
