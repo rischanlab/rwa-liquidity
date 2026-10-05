@@ -14,9 +14,11 @@ later mistakes its figures for a direct measurement.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from rwa_liquidity.schema.asset import AssetRef
@@ -24,10 +26,14 @@ from rwa_liquidity.schema.asset import AssetRef
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-__all__ = ["RegistryEntry", "RegistryError", "load_defillama_registry"]
+__all__ = ["REGISTRY_ENV", "RegistryEntry", "RegistryError", "load_defillama_registry"]
 
 _DATA_PACKAGE: Final = "rwa_liquidity.sources.data"
 _DEFILLAMA_FILE: Final = "defillama.toml"
+
+#: Environment variable naming an alternative registry: either a file shipped in
+#: the data package (e.g. `research.toml`) or a path to a TOML file on disk.
+REGISTRY_ENV: Final = "RWA_LIQUIDITY_REGISTRY"
 
 #: Bumped when the file layout changes incompatibly.
 _SUPPORTED_SCHEMA_VERSION: Final = 1
@@ -108,8 +114,14 @@ def _parse(document: Mapping[str, Any]) -> tuple[RegistryEntry, ...]:
     return tuple(entries)
 
 
-def load_defillama_registry() -> Sequence[RegistryEntry]:
-    """Read and validate the DeFiLlama asset registry shipped with the package.
+def load_defillama_registry(name: str | None = None) -> Sequence[RegistryEntry]:
+    """Read and validate an asset registry.
+
+    Args:
+        name: Which registry to read. A path to a TOML file on disk, or the name
+            of a file in the data package. When omitted, the environment
+            variable `RWA_LIQUIDITY_REGISTRY` is used, and failing that the
+            default `defillama.toml`.
 
     Returns:
         Every entry in file order.
@@ -118,17 +130,21 @@ def load_defillama_registry() -> Sequence[RegistryEntry]:
         RegistryError: If the file is absent, unparseable, of the wrong schema
             version, or contains an incomplete or duplicated entry.
     """
+    chosen = name or os.environ.get(REGISTRY_ENV, "").strip() or _DEFILLAMA_FILE
+    on_disk = Path(chosen).expanduser()
     try:
-        text = resources.files(_DATA_PACKAGE).joinpath(_DEFILLAMA_FILE).read_text(encoding="utf-8")
+        if on_disk.is_file():
+            text = on_disk.read_text(encoding="utf-8")
+        else:
+            text = resources.files(_DATA_PACKAGE).joinpath(chosen).read_text(encoding="utf-8")
     except (FileNotFoundError, ModuleNotFoundError) as error:
         raise RegistryError(
-            f"{_DEFILLAMA_FILE} is not present in the installed package; the wheel "
-            f"was built without its data files"
+            f"{chosen} is neither a file on disk nor present in the installed package"
         ) from error
 
     try:
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
-        raise RegistryError(f"{_DEFILLAMA_FILE} is not valid TOML: {error}") from error
+        raise RegistryError(f"{chosen} is not valid TOML: {error}") from error
 
     return _parse(document)

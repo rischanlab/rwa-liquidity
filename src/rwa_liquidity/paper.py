@@ -123,6 +123,15 @@ def _activity(transfers: pl.DataFrame, supply: float | None) -> dict[str, object
     v_all = sum(volumes.values())
     v_res = volumes["residual"]
     row["n_all"] = transfers.height
+    # Active addresses: every distinct address that sent or received the token in
+    # the window, of any category, burn addresses aside. This is the "active
+    # addresses (30 days)" count of the Beyond TVL risk framework.
+    if transfers.height:
+        senders = transfers["from_address"].str.to_lowercase().to_list()
+        recipients = transfers["to_address"].str.to_lowercase().to_list()
+        row["active_addresses"] = len((set(senders) | set(recipients)) - BURN_ADDRESSES)
+    else:
+        row["active_addresses"] = 0
     row["v_all"] = v_all
     row["t_all"] = _ratio(v_all, supply) if supply is not None else None
     row["t_res"] = _ratio(v_res, supply) if supply is not None else None
@@ -212,6 +221,7 @@ PANEL_SCHEMA: Final = pl.Schema(
         ("holders", _COUNT),
         *((f"n_{category}", _COUNT) for category in EVENT_CATEGORIES),
         ("n_all", _COUNT),
+        ("active_addresses", _COUNT),
         *((f"v_{category}", _REAL) for category in EVENT_CATEGORIES),
         ("v_all", _REAL),
         ("t_all", _REAL),

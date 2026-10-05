@@ -223,3 +223,45 @@ notes = """
 Excluded: Elixir's deUSD Mint and Redeem contract, which holds HLSCOPE as
 collateral (about 3% of supply).
 """
+
+
+# ---------------------------------------------------------------------------
+# Added for the research registry (research.toml), October 2026
+# ---------------------------------------------------------------------------
+
+[[asset]]
+uid = "ethereum:0x96f6ef951840721adbf46ac996b59e0235cb985c"  # USDY
+excluded_contracts = [
+    "0xaf37c1167910ebC994e266949387d2c7C326b879", # Ondo: "rUSDY token on Ethereum (rebasing USDY)"
+]
+issuer_addresses = [
+    # Listed by Ondo at docs.ondo.finance/addresses.
+    "0xa42613C243b67BF6194Ac327795b926B4b491f15", # USDY_InstantManager
+    "0x25A103A1D6AeC5967c1A4fe2039cdc514886b97e", # USDYManager (legacy)
+]
+notes = """
+Excluded: rUSDY, Ondo's rebasing wrapper, which holds USDY on behalf of every \
+rUSDY holder. Issuer addresses: the two managers Ondo publishes for buying and \
+redeeming USDY. Checked against Ondo's address page on 2026-10-05.
+"""
+
+[[asset]]
+uid = "ethereum:0x3ddc84940ab509c11b20b76b466933f40b750dc9"  # BENJI
+excluded_contracts = []
+issuer_addresses = [
+    # Listed by Franklin Templeton's Benji DevHub.
+    "0x8C8Bfc3151C2161a4baD77268e246A08e5D9c666", # Transfer Agent Module
+]
+notes = """
+Issuer address: the Transfer Agent Module Franklin Templeton publishes for \
+BENJI on Ethereum. No pooling contract was identified. Checked on 2026-10-05.
+"""
+
+[[asset]]
+uid = "ethereum:0x51c2d74017390cbbd30550179a16a1c28f7210fc"  # STAC
+excluded_contracts = []
+issuer_addresses = []
+notes = """
+No issuer-published contract list or pooling contract was identified for STAC. \
+Checked on 2026-10-05; worth re-checking Etherscan labels of the top holders.
+"""

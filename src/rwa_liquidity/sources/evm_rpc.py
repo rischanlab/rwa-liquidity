@@ -337,8 +337,15 @@ class EvmRpcSource(Source):
 
         self._rpc_url = (rpc_url or optional_setting("EVM_RPC_URL") or DEFAULT_RPC_URL).rstrip("/")
         self._issuers = {uid.lower(): tuple(v) for uid, v in (issuer_addresses or {}).items()}
-        self._max_logs = max_logs
-        self._max_log_requests = max_log_requests
+        # EVM_RPC_MAX_LOGS / EVM_RPC_MAX_LOG_REQUESTS raise the scan ceilings for
+        # a token too active for the defaults (e.g. USDY), at the cost of a
+        # longer first run.
+        configured_logs = optional_setting("EVM_RPC_MAX_LOGS")
+        configured_requests = optional_setting("EVM_RPC_MAX_LOG_REQUESTS")
+        self._max_logs = int(configured_logs) if configured_logs else max_logs
+        self._max_log_requests = (
+            int(configured_requests) if configured_requests else max_log_requests
+        )
         if block_step is None:
             # Fixing the step fixes the block ranges every scan asks for, and so
             # the cache keys its answers are stored under. A discovered step can

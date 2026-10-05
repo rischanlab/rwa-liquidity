@@ -611,6 +611,14 @@ def paper(
     ] = None,
     refresh: Annotated[bool, typer.Option("--refresh")] = False,
     out: Annotated[Path, typer.Option("--out", "-o")] = Path("paper"),
+    registry: Annotated[
+        str | None,
+        typer.Option(
+            "--registry",
+            help="Asset list to measure: a file in the data package (e.g. research.toml) "
+            "or a path to a TOML file. Defaults to defillama.toml.",
+        ),
+    ] = None,
 ) -> None:
     r"""Write the working paper's tables and panel from one run at one block.
 
@@ -622,6 +630,7 @@ def paper(
     recorded in the panel as `--head` repeats the run.
     """
     from rwa_liquidity.paper import (  # noqa: PLC0415 -- keeps `--version` fast
+        TABLE_ASSETS,
         build_panel,
         months,
         months_table,
@@ -633,6 +642,19 @@ def paper(
         issuer_addresses,
         load_defillama_registry,
         load_known_addresses,
+    )
+
+    if registry:
+        # Set for the whole run, so every registry read below sees the same list.
+        import os  # noqa: PLC0415
+
+        from rwa_liquidity.sources.registry import REGISTRY_ENV  # noqa: PLC0415
+
+        os.environ[REGISTRY_ENV] = registry
+    registry_entries = load_defillama_registry()
+    console.print(
+        f"Registry: [bold]{registry or 'defillama.toml'}[/bold] "
+        f"({', '.join(entry.symbol for entry in registry_entries)})"
     )
 
     try:
@@ -647,7 +669,7 @@ def paper(
         collected.snapshots,
         collected.transfers,
         collected.holders,
-        assets=[(entry.ref.uid, entry.symbol) for entry in load_defillama_registry()],
+        assets=[(entry.ref.uid, entry.symbol) for entry in registry_entries],
         windows=periods_of,
         issuers=issuer_addresses(known),
         exclude=excluded_contracts(known),
@@ -660,7 +682,13 @@ def paper(
     out.mkdir(parents=True, exist_ok=True)
     panel.write_csv(out / "panel.csv", datetime_format="%Y-%m-%dT%H:%M:%SZ")
     written = {
-        "table_turnover.tex": turnover_table(panel, periods_of[-1]),
+        "table_turnover.tex": turnover_table(
+            panel,
+            periods_of[-1],
+            # The default registry keeps the paper's four Table 2 funds; another
+            # registry gets one row per asset it lists.
+            assets=tuple(entry.symbol for entry in registry_entries) if registry else TABLE_ASSETS,
+        ),
         "table_months.tex": months_table(panel),
         "numbers.tex": paper_numbers(panel, periods_of),
     }
@@ -668,6 +696,54 @@ def paper(
         (out / name).write_text(text, encoding="utf-8", newline="\n")
     for name in ("panel.csv", *written):
         console.print(f"Wrote [bold]{out / name}[/bold]")
+
+
+@app.command()
+def risk(
+    *,
+    panel_path: Annotated[
+        Path, typer.Option("--panel", help="panel.csv written by the paper command.")
+    ] = Path("paper/panel.csv"),
+    prices_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--prices",
+            help="CSV with symbol,price_usd (optional month YYYY-MM) for the dollar variables.",
+        ),
+    ] = None,
+    out: Annotated[Path | None, typer.Option("--out", "-o")] = None,
+) -> None:
+    """Compute the Beyond TVL liquidity (L) and concentration (C) risk scores.
+
+    Reads the asset-month panel, adds the paper's raw and derived variables, and
+    min-max scales them across assets within each month. Market-quality risk M
+    is cross-chain only and is not computed from Ethereum data; see risk.py.
+    """
+    from rwa_liquidity.risk import build_risk, load_prices  # noqa: PLC0415
+
+    panel = pl.read_csv(panel_path, infer_schema_length=None)
+    if "active_addresses" not in panel.columns:
+        console.print(
+            "[red]panel.csv has no active_addresses column. Re-run the paper command "
+            "with this version first.[/red]"
+        )
+        raise typer.Exit(code=2)
+    prices = load_prices(str(prices_path)) if prices_path else {}
+    scores = build_risk(panel, prices)
+    missing = sorted(
+        set(scores.filter(pl.col("price_usd").is_null())["symbol"].to_list())
+        if "price_usd" in scores.columns
+        else []
+    )
+    if missing:
+        console.print(
+            f"[yellow]No price for {', '.join(missing)}: asset value, transfer volume in "
+            f"USD, ATS and AVH are left empty for them, and L and C average the "
+            f"remaining components.[/yellow]"
+        )
+    target = out or panel_path.with_name("risk.csv")
+    scores.write_csv(target)
+    console.print(f"Wrote [bold]{target}[/bold] ({scores.height} asset-months)")
 
 
 @app.command()
